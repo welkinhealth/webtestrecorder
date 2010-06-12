@@ -1,4 +1,6 @@
+import sys
 import warnings
+import optparse
 from webob.dec import wsgify
 from webob import Request
 from webtest import TestRequest, TestResponse
@@ -18,9 +20,9 @@ def recorder(req, app, file):
     file.write(''.join(data))
     return resp
 
-def record_file(filename):
+def record_file(app, filename):
     fp = open(filename, 'ab')
-    return recorder(file=fp)
+    return recorder(app, file=fp)
 
 def get_records(file, RequestClass=TestRequest,
                 ResponseClass=TestResponse):
@@ -69,6 +71,11 @@ def write_doctest(records, fp):
         write_doctest_item(req, fp)
 
 def write_doctest_item(req, fp):
+    resp = req.response
+    if not isinstance(resp, TestResponse):
+        resp = TestResponse(body=resp.body, status=resp.status,
+                            headerlist=resp.headerlist)
+        req.response = resp
     url = req.url
     if url.startswith('http://localhost/'):
         url = url[len('http://localhost'):]
@@ -97,16 +104,25 @@ def write_doctest_item(req, fp):
         if req.body:
             kw['body'] = req.body
         kw['content_type'] = req.content_type
+    if resp.status_int >= 400:
+        kw['status'] = resp.status_int
     params = [repr(url)]
     params.extend('%s=%r' % (name, value) for name, value in sorted(kw.items()))
     params = ', '.join(params)
     fp.write('    >>> print app.%s(%s)\n' % (req.method.lower(), params))
-    resp = req.response
-    if not isinstance(resp, TestResponse):
-        resp = TestResponse(body=resp.body, status=resp.status,
-                            headerlist=resp.headerlist)
     for line in str(resp).splitlines():
         if not line:
             fp.write('    <BLANKLINE>\n')
         else:
             fp.write('    %s\n' % line)
+
+parser = optparse.OptionParser(
+    usage='%prog < recorded_file > doctest')
+
+def main():
+    options, args = parser.parse_args()
+    records = get_records(sys.stdin)
+    write_doctest(records, sys.stdout)
+
+if __name__ == '__main__':
+    main()

@@ -1,0 +1,31 @@
+WebTest Recorder
+================
+
+This package lets you record all the requests and responses of an
+application, and then create a doctest from that.  (There's no real
+reason it couldn't be a unit test... just haven't written that yet.)
+
+The recorder is a piece of middleware.  You use it like this::
+
+    from webtestrecorder import record_file
+
+    app = ... instantiate app ...
+    app = record_file(app, '/tmp/record.txt')
+
+All requests and responses will be written to this file.  You can read
+them out like so::
+
+    from webtestrecorder import get_records
+
+    records = get_records(open('/tmp/record.txt', 'rb'))
+
+``records`` is a list of requests, and each request has a
+``.response`` attribute.  You can then create a test::
+
+    from webtestrecorder import write_doctest
+
+    write_doctest(records, open('/tmp/doctest.txt', 'wb'))
+
+You can also use this like a shell script::
+
+    $ python -m webtestrecorder < /tmp/record.txt > /tmp/doctest.txt
