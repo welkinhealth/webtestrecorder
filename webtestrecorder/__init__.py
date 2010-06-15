@@ -1,4 +1,5 @@
 import sys
+import re
 import warnings
 import optparse
 from webob.dec import wsgify
@@ -70,24 +71,65 @@ def write_doctest(records, fp):
     for req in records:
         write_doctest_item(req, fp)
 
-def write_doctest_item(req, fp):
+def write_doctest_item(req, fp, default_host='http://localhost'):
+    fixup_response(req)
     resp = req.response
-    if not isinstance(resp, TestResponse):
-        resp = TestResponse(body=resp.body, status=resp.status,
-                            headerlist=resp.headerlist)
+    call_text = str_method_call(req, resp, default_host)
+    fp.write('    >>> print app%s\n' % call_text)
+    for line in str(resp).splitlines():
+        if not line:
+            fp.write('    <BLANKLINE>\n')
+        else:
+            fp.write('    %s\n' % line)
+
+def write_function_unittest(records, fp, func_name='test_app', include_intro=True,
+                            indent='', default_host='http://localhost'):
+    if include_intro:
+        fp.write('%sfrom webtest import TestApp\n\n' % indent)
+        fp.write('%sdef %s():\n' % (indent, func_name))
+        fp.write('%s    app = TestApp(application)\n' % indent)
+    for req in records:
+        write_function_unittest_item(req, fp, indent + '    ', app_name='app',
+                                     default_host=default_host)
+
+def write_function_unittest_item(req, fp, indent, app_name='app', default_host='http://localhost'):
+    fixup_response(req)
+    resp = req.response
+    call_text = str_method_call(req, resp, default_host)
+    fp.write('%sresp = %s%s\n' % (indent, app_name, call_text))
+    fp.write('%sassert resp.body == %s\n' % (indent, pyrepr(resp.body, indent)))
+    ## FIXME: I could check other things, but what things specifically?
+
+def fixup_response(req):
+    """Make sure the req has a TestResponse response"""
+    if not isinstance(req.response, TestResponse):
+        resp = TestResponse(body=req.response.body, status=req.response.status,
+                            headerlist=req.response.headerlist)
         req.response = resp
+
+def str_method_call(req, resp=None, default_host='http://localhost'):
+    """Returns a method call that represents the given request, as
+    though you were generating that request with WebTest.
+
+    This returns something like ``'.get(\"url\")'`` -- you add the
+    object.
+    """
+    if resp is None:
+        resp = req.response
     url = req.url
-    if url.startswith('http://localhost/'):
-        url = url[len('http://localhost'):]
+    if url.startswith(default_host + '/'):
+        url = url[len(default_host):]
     kw = {}
     for name, value in req.headers.iteritems():
-        if name.lower() == 'content-type':
-            continue
-        if name.lower() == 'content-length':
-            continue
-        if name.lower() == 'host':
-            continue
         py_name = name.lower().replace('-', '_')
+        if py_name == 'content_type':
+            if not value or value.lower() == 'application/x-www-form-urlencoded':
+                # Default content-type
+                continue
+        if py_name == 'content_length':
+            continue
+        if py_name == 'host':
+            continue
         if hasattr(Request, py_name):
             desc = getattr(Request, py_name)
             if isinstance(desc, descriptors.converter):
@@ -103,26 +145,45 @@ def write_doctest_item(req, fp):
     else:
         if req.body:
             kw['body'] = req.body
-        kw['content_type'] = req.content_type
     if resp.status_int >= 400:
         kw['status'] = resp.status_int
-    params = [repr(url)]
-    params.extend('%s=%r' % (name, value) for name, value in sorted(kw.items()))
+    params = [pyrepr(url)]
+    params.extend('%s=%s' % (name, pyrepr(value)) for name, value in sorted(kw.items()))
     params = ', '.join(params)
-    fp.write('    >>> print app.%s(%s)\n' % (req.method.lower(), params))
-    for line in str(resp).splitlines():
-        if not line:
-            fp.write('    <BLANKLINE>\n')
+    ## FIXME: not all methods work this way (e.g., there's no app.mkcol()):
+    return '.%s(%s)' % (req.method.lower(), params)
+
+def pyrepr(value, indent=''):
+    if isinstance(value, basestring) and '\n' in value:
+        v = repr(value)
+        q = v[0]
+        v = q + q + v + q + q
+        lines = v.split('\\n')
+        return '\n'.join(lines[0] + [indent + l for l in lines[1:]])
+    elif isinstance(value, dict):
+        if all(re.match(r'[a-z_][a-z_0-9]*', key) for key in value):
+            return 'dict(%s)' % (', '.join('%s=%s' % (key, pyrepr(v, indent))
+                                           for key, v in sorted(value.items())))
         else:
-            fp.write('    %s\n' % line)
+            return '{%s}' % (', '.join('%s: %s' % (pyrepr(key, indent), pyrepr(v, indent))
+                                       for key, v in sorted(value.items())))
+    else:
+        return repr(value)
 
 parser = optparse.OptionParser(
     usage='%prog < recorded_file > doctest')
 
+parser.add_option(
+    '--func-unittest', action='store_true',
+    help="Write a functional unittest instead of a doctest")
+
 def main():
     options, args = parser.parse_args()
     records = get_records(sys.stdin)
-    write_doctest(records, sys.stdout)
+    if options.func_unittest:
+        write_function_unittest(records, sys.stdout)
+    else:
+        write_doctest(records, sys.stdout)
 
 if __name__ == '__main__':
     main()
