@@ -1,7 +1,7 @@
 from cStringIO import StringIO
 from webtest import TestApp
 from webob.dec import wsgify
-from webtestrecorder import recorder, get_records, write_doctest, write_function_unittest
+from webtestrecorder import Recorder, get_records, write_doctest, write_function_unittest
 from nose.tools import eq_
 
 @wsgify
@@ -10,7 +10,7 @@ def demo_application(req):
 
 def test_recorder():
     out = StringIO()
-    app = TestApp(recorder(demo_application, file=out))
+    app = TestApp(Recorder(demo_application, file=out))
     app.get('/test')
     app.post('/example', {'var': 'value'})
     data = out.getvalue()
@@ -18,6 +18,7 @@ def test_recorder():
     result = StringIO()
     write_doctest(records, result)
     dt = result.getvalue()
+    print dt
     eq_(dt, doctest_example)
     result = StringIO()
     write_function_unittest(records, result)
@@ -28,12 +29,10 @@ def test_recorder():
 doctest_example = """\
     >>> print app.get('/test')
     Response: 200 OK
-    <BLANKLINE>
     Content-Type: text/html; charset=UTF-8
     test response
     >>> print app.post('/example', params=dict(var=u'value'))
     Response: 200 OK
-    <BLANKLINE>
     Content-Type: text/html; charset=UTF-8
     test response
 """

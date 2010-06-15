@@ -1,5 +1,4 @@
 from setuptools import setup, find_packages
-import sys, os
 
 version = '0.1'
 
@@ -18,9 +17,10 @@ setup(name='WebTestRecorder',
       include_package_data=True,
       zip_safe=False,
       install_requires=[
-          # -*- Extra requirements: -*-
+          'WebTest', 'WebOb', 'Tempita',
       ],
       entry_points="""
-      # -*- Entry points: -*-
+      [paste.filter_app_factory]
+      main = webtestrecorder:Recorder.entry_point
       """,
       )

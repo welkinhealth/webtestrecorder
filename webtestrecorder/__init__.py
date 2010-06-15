@@ -2,28 +2,123 @@ import sys
 import re
 import warnings
 import optparse
+import threading
+from cStringIO import StringIO
+from tempita import HTMLTemplate
 from webob.dec import wsgify
-from webob import Request
+from webob import exc
+from webob import Request, Response
 from webtest import TestRequest, TestResponse
 from webob import descriptors
 
-@wsgify.middleware
-def recorder(req, app, file):
-    data = []
-    data.append('--Request:\n')
-    data.append(str(req))
-    if not req.content_length:
-        data.append('\n')
-    resp = req.get_response(app)
-    data.append('\n--Response:\n')
-    data.append(str(resp))
-    data.append('\n')
-    file.write(''.join(data))
-    return resp
+class Recorder(object):
 
-def record_file(app, filename):
-    fp = open(filename, 'ab')
-    return recorder(app, file=fp)
+    def __init__(self, app, file, intercept='/.webtestrecorder'):
+        self.app = app
+        if isinstance(file, basestring):
+            file = open(file, 'ab')
+        self.file = file
+        self.lock = threading.Lock()
+        self.intercept = intercept
+
+    @classmethod
+    def entry_point(cls, app, global_conf, filename, intercept='/.webtestrecorder'):
+        return cls(app, filename, intercept)
+
+    @wsgify
+    def __call__(self, req):
+        if self.intercept and req.path_info.startswith(self.intercept):
+            return self.internal(req)
+        resp = req.get_response(self.app)
+        self.write_record(req, resp)
+        return resp
+
+    def write_record(self, req, resp):
+        data = []
+        data.append('--Request:\n')
+        data.append(str(req))
+        if not req.content_length:
+            data.append('\n')
+        data.append('\n--Response:\n')
+        data.append(str(resp))
+        if not resp.body:
+            data.append('\n')
+        data.append('\n')
+        self.lock.acquire()
+        try:
+            self.file.write(''.join(data))
+        finally:
+            self.lock.release()
+
+    @wsgify
+    def internal(self, req):
+        if req.method == 'POST':
+            false_req = Request.blank('/')
+            false_resp = Response('', status='200 Internal Note')
+            false_resp.write(req.params['note'])
+            self.write_record(false_req, false_resp)
+            raise exc.HTTPFound(req.url)
+        return Response(self._intercept_template.substitute(req=req, s=self))
+
+    _intercept_template = HTMLTemplate('''\
+<html>
+ <head>
+  <title>WebTest Recorder</title>
+  <style type="text/css">
+    body {
+      font-family: sans-serif;
+    }
+    pre {
+      overflow: auto;
+    }
+  </style>
+ </head>
+ <body>
+  <h1>WebTest Recorder</h1>
+
+  <div>
+   <a href="#doctest">doctest</a> | <a href="#function_unittest">function unittest</a>
+  </div>
+
+  <form action="{{req.url}}" method="POST">
+   <fieldset>
+   You may add a note/comment to the record:<br>
+   <textarea name="note" rows=4 style="width: 100%"></textarea><br>
+   <button type="submit">Save note</button>
+   </fieldset>
+  </form>
+
+  <h1 id="doctest">Current tests as a doctest</h1>
+
+  <pre>{{s.doctest()}}</pre>
+
+  <h1 id="function_unittest">Current tests as a function unittest</h1>
+
+  <pre>{{s.function_unittest()}}</pre>
+
+ </body>
+</html>
+''', name='_intercept_template')
+
+    def doctest(self):
+        records = self.get_records()
+        out = StringIO()
+        write_doctest(records, out)
+        return out.getvalue()
+
+    def function_unittest(self):
+        records = self.get_records()
+        out = StringIO()
+        write_function_unittest(records, out)
+        return out.getvalue()
+
+    def get_records(self):
+        self.file.flush()
+        fn = self.file.name
+        fp = open(fn, 'rb')
+        content = StringIO(fp.read())
+        fp.close()
+        return get_records(content)
 
 def get_records(file, RequestClass=TestRequest,
                 ResponseClass=TestResponse):
@@ -74,6 +169,10 @@ def write_doctest(records, fp):
 def write_doctest_item(req, fp, default_host='http://localhost'):
     fixup_response(req)
     resp = req.response
+    msg = internal_note(resp)
+    if msg:
+        fp.write('\n%s\n\n' % msg.strip())
+        return
     call_text = str_method_call(req, resp, default_host)
     fp.write('    >>> print app%s\n' % call_text)
     for line in str(resp).splitlines():
@@ -95,6 +194,11 @@ def write_function_unittest(records, fp, func_name='test_app', include_intro=Tru
 def write_function_unittest_item(req, fp, indent, app_name='app', default_host='http://localhost'):
     fixup_response(req)
     resp = req.response
+    msg = internal_note(resp)
+    if msg:
+        fp.write(''.join('%s# %s\n' % (indent, line)
+                         for line in msg.splitlines()))
+        return
     call_text = str_method_call(req, resp, default_host)
     fp.write('%sresp = %s%s\n' % (indent, app_name, call_text))
     fp.write('%sassert resp.body == %s\n' % (indent, pyrepr(resp.body, indent)))
@@ -106,6 +210,13 @@ def fixup_response(req):
         resp = TestResponse(body=req.response.body, status=req.response.status,
                             headerlist=req.response.headerlist)
         req.response = resp
+
+def internal_note(resp):
+    """Returns the internal note, if the response is such a response.
+    Otherwise returns None."""
+    if resp.status.lower() == '200 internal note':
+        return resp.body
+    return None
 
 def str_method_call(req, resp=None, default_host='http://localhost'):
     """Returns a method call that represents the given request, as
@@ -126,14 +237,20 @@ def str_method_call(req, resp=None, default_host='http://localhost'):
             if not value or value.lower() == 'application/x-www-form-urlencoded':
                 # Default content-type
                 continue
-        if py_name == 'content_length':
-            continue
-        if py_name == 'host':
+        if py_name in ('content_length', 'host', 'user_agent',
+                       'connection', 'keep_alive',
+                       'accept_language', 'accept_charset', 'accept_encoding'):
             continue
         if hasattr(Request, py_name):
             desc = getattr(Request, py_name)
             if isinstance(desc, descriptors.converter):
-                value = desc.getter_converter(value)
+                value = desc.getter_converter(value, *desc.converter_args)
+            try:
+                # Internal webob values aren't useful here
+                if value.__class__.__module__.startswith('webob.'):
+                    value = str(value)
+            except AttributeError:
+                pass
             kw[py_name] = value
         else:
             kw.setdefault('headers', {})[name] = value
@@ -161,7 +278,7 @@ def pyrepr(value, indent=''):
         lines = v.split('\\n')
         return '\n'.join(lines[0] + [indent + l for l in lines[1:]])
     elif isinstance(value, dict):
-        if all(re.match(r'[a-z_][a-z_0-9]*', key) for key in value):
+        if all(re.match(r'[a-zA-Z_][a-zA-Z_0-9]*', key) for key in value):
             return 'dict(%s)' % (', '.join('%s=%s' % (key, pyrepr(v, indent))
                                            for key, v in sorted(value.items())))
         else:
