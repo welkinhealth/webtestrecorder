@@ -61,10 +61,15 @@ class Recorder(object):
             and not req.environ.get('x-wsgiorg.developer_user')):
             raise exc.HTTPForbidden('You must login')
         if req.method == 'POST':
-            false_req = Request.blank('/')
-            false_resp = Response('', status='200 Internal Note')
-            false_resp.write(req.params['note'])
-            self.write_record(false_req, false_resp)
+            if req.params.get('clear'):
+                name = self.file.name
+                self.file.close()
+                self.file = open(name, 'wb')
+            else:
+                false_req = Request.blank('/')
+                false_resp = Response('', status='200 Internal Note')
+                false_resp.write(req.params['note'])
+                self.write_record(false_req, false_resp)
             raise exc.HTTPFound(req.url)
         if req.params.get('download'):
             if req.params['download'] == 'doctest':
@@ -101,6 +106,8 @@ class Recorder(object):
    You may add a note/comment to the record:<br>
    <textarea name="note" rows=4 style="width: 100%"></textarea><br>
    <button type="submit">Save note</button>
+   <button type="submit" name="clear" value="1"
+    style="background-color: #f99">Clear!</button>
    </fieldset>
   </form>
 
