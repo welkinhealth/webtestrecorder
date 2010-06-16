@@ -13,17 +13,22 @@ from webob import descriptors
 
 class Recorder(object):
 
-    def __init__(self, app, file, intercept='/.webtestrecorder'):
+    def __init__(self, app, file, intercept='/.webtestrecorder',
+                 require_devauth=False):
         self.app = app
         if isinstance(file, basestring):
             file = open(file, 'ab')
         self.file = file
         self.lock = threading.Lock()
         self.intercept = intercept
+        self.require_devauth = require_devauth
 
     @classmethod
-    def entry_point(cls, app, global_conf, filename, intercept='/.webtestrecorder'):
-        return cls(app, filename, intercept)
+    def entry_point(cls, app, global_conf, filename, intercept='/.webtestrecorder',
+                    require_devauth=False):
+        from paste.deploy.converters import asbool
+        require_devauth = asbool(require_devauth)
+        return cls(app, filename, intercept, require_devauth)
 
     @wsgify
     def __call__(self, req):
@@ -52,12 +57,21 @@ class Recorder(object):
 
     @wsgify
     def internal(self, req):
+        if (self.require_devauth
+            and not req.environ.get('x-wsgiorg.developer_user')):
+            raise exc.HTTPForbidden('You must login')
         if req.method == 'POST':
             false_req = Request.blank('/')
             false_resp = Response('', status='200 Internal Note')
             false_resp.write(req.params['note'])
             self.write_record(false_req, false_resp)
             raise exc.HTTPFound(req.url)
+        if req.params.get('download'):
+            if req.params['download'] == 'doctest':
+                text = self.doctest(req)
+            else:
+                text = self.function_unittest(req)
+            return Response(text, content_type='text/plain')
         return Response(self._intercept_template.substitute(req=req, s=self))
 
     _intercept_template = HTMLTemplate('''\
@@ -77,7 +91,9 @@ class Recorder(object):
   <h1>WebTest Recorder</h1>
 
   <div>
-   <a href="#doctest">doctest</a> | <a href="#function_unittest">function unittest</a>
+   <a href="#doctest">doctest</a> (<a href="{{req.url}}?download=doctest">download</a>)
+     | <a href="#function_unittest">function unittest</a>
+       (<a href="{{req.url}}?download=function_unittest">download</a>)
   </div>
 
   <form action="{{req.url}}" method="POST">
@@ -90,26 +106,26 @@ class Recorder(object):
 
   <h1 id="doctest">Current tests as a doctest</h1>
 
-  <pre>{{s.doctest()}}</pre>
+  <pre>{{s.doctest(req)}}</pre>
 
   <h1 id="function_unittest">Current tests as a function unittest</h1>
 
-  <pre>{{s.function_unittest()}}</pre>
+  <pre>{{s.function_unittest(req)}}</pre>
 
  </body>
 </html>
 ''', name='_intercept_template')
 
-    def doctest(self):
+    def doctest(self, req):
         records = self.get_records()
         out = StringIO()
-        write_doctest(records, out)
+        write_doctest(records, out, default_host=req.host)
         return out.getvalue()
 
-    def function_unittest(self):
+    def function_unittest(self, req):
         records = self.get_records()
         out = StringIO()
-        write_function_unittest(records, out)
+        write_function_unittest(records, out, default_host=req.host)
         return out.getvalue()
 
     def get_records(self):
@@ -162,9 +178,9 @@ def get_records(file, RequestClass=TestRequest,
         records.append(req)
     return records
 
-def write_doctest(records, fp):
+def write_doctest(records, fp, default_host='http://localhost'):
     for req in records:
-        write_doctest_item(req, fp)
+        write_doctest_item(req, fp, default_host)
 
 def write_doctest_item(req, fp, default_host='http://localhost'):
     fixup_response(req)
@@ -218,6 +234,24 @@ def internal_note(resp):
         return resp.body
     return None
 
+def match_host(hostname, url):
+    if not hostname.startswith('http://'):
+        if ':' in hostname:
+            hostname = hostname.split(':', 1)[0]
+        hostname = 'http://' + hostname
+    if url.startswith(hostname + '/'):
+        return url[len(hostname):]
+    elif url.startswith(hostname + ':'):
+        url = url[len(hostname) + 1:]
+        if '/' in url:
+            return '/' + url.split('/', 1)[1]
+        else:
+            return '/'
+    else:
+        if hostname == 'http://127.0.0.1':
+            return match_host('http://localhost', url)
+        return url
+
 def str_method_call(req, resp=None, default_host='http://localhost'):
     """Returns a method call that represents the given request, as
     though you were generating that request with WebTest.
@@ -228,8 +262,7 @@ def str_method_call(req, resp=None, default_host='http://localhost'):
     if resp is None:
         resp = req.response
     url = req.url
-    if url.startswith(default_host + '/'):
-        url = url[len(default_host):]
+    url = match_host(default_host, url)
     kw = {}
     for name, value in req.headers.iteritems():
         py_name = name.lower().replace('-', '_')
