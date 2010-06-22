@@ -17,7 +17,10 @@ setup(name='WebTestRecorder',
       include_package_data=True,
       zip_safe=False,
       install_requires=[
-          'WebTest', 'WebOb', 'Tempita',
+          'WebTest',
+          'WebOb',
+          'Tempita',
+          'WSGIProxy',
       ],
       entry_points="""
       [paste.filter_app_factory]
