@@ -29,3 +29,24 @@ them out like so::
 You can also use this like a shell script::
 
     $ python -m webtestrecorder < /tmp/record.txt > /tmp/doctest.txt
+
+Apache Logs
+-----------
+
+You can read requests and responses from Apache logs via
+:func:`webtestrecorder.apachelog.parse_apache_log()`.  A constraint of
+this is that request bodies won't be present, and responses just have
+a status code and Content-Length, the Content-Type is unknown and the body
+is padded with null bytes.
+
+Rerunning requests
+------------------
+
+The module :module:`webtestrecorder.http` can take a list of
+requests/responses and send them to a server, effectively replaying
+requests.  This is also a command-line program usable like::
+
+    $ python -m webtestrecorder.http apache_access.log --host localhost:8000
+
+You can filter or rewrite these requests with a custom filter
+function.  See ``python -m webtestrecorder.http -h`` for more.
