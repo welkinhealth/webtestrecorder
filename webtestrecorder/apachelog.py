@@ -49,6 +49,25 @@ def parse_apache_log(fp, host='localhost',
         req.response = resp
         yield req
 
+line_template = (
+    '%(REMOTE_HOST)s %(REMOTE_IDENT)s %(REMOTE_USER)s '
+    '[%(date)s] "%(REQUEST_METHOD)s %(path)s %(HTTP_PROTOCOL)s" '
+    '%(status)s %(size)s "%(HTTP_REFERER)s" "%(HTTP_USER_AGENT)s"')
+
+def apache_log_line(req, resp):
+    d = {}
+    for var in ['REMOTE_HOST', 'REMOTE_IDENT', 'REMOTE_USER',
+                'HTTP_REFERER', 'HTTP_USER_AGENT',
+                'REQUEST_METHOD', 'HTTP_PROTOCOL']:
+        if req.environ.get(var):
+            d[var] = req.environ[var].replace('"', '')
+        else:
+            d[var] = '-'
+    d['date'] = req.date.strftime('%d/%b/%Y:%H:%M:%S')
+    d['path'] = req.path_qs
+    d['status'] = resp.status
+    d['size'] = resp.content_length or '-'
+    return line_template % d
 
 def parse_apache_date(date):
     return datetime.strptime(date.split()[0], '%d/%b/%Y:%H:%M:%S')

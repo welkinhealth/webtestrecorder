@@ -1,4 +1,5 @@
 import os
+import httplib
 from wsgiproxy.exactproxy import proxy_exact_request
 
 def replay_records(records, host=None, methods=None):
@@ -13,13 +14,23 @@ def replay_records(records, host=None, methods=None):
         if methods:
             if req.method not in methods:
                 yield req, None
-        resp = req.get_response(proxy_exact_request)
-        yield req, resp
+        n = 0
+        resp = None
+        while 1:
+            try:
+                resp = req.get_response(proxy_exact_request)
+                break
+            except httplib.HTTPException:
+                if n >= 3:
+                    break
+                n += 1
+        if resp is not None:
+            yield req, resp
 
 def main():
     import sys
     import optparse
-    from webtestrecorder.apachelog import parse_apache_log
+    from webtestrecorder.apachelog import parse_apache_log, apache_log_line
     parser = optparse.OptionParser(
         usage='%prog FILENAMES --filter CODE')
     parser.add_option(
@@ -36,6 +47,12 @@ def main():
     parser.add_option(
         '--print-response', action='store_true',
         help='Show the response')
+    parser.add_option(
+        '--failures', metavar='FILE',
+        help="write all failures to the given file")
+    parser.add_option(
+        '--success', metavar='FILE',
+        help="write all succeeding URLs to the given file (as Apache log lines)")
     options, args = parser.parse_args()
     if not args:
         fps = [sys.stdin]
@@ -45,6 +62,14 @@ def main():
         filters = parse_filters(options.filter)
     else:
         filters = None
+    if options.failures:
+        failures = open(options.failures, 'a')
+    else:
+        failures = None
+    if options.success:
+        success = open(options.success, 'a')
+    else:
+        success = None
     records = []
     for fp in fps:
         for req in parse_apache_log(fp):
@@ -64,10 +89,19 @@ def main():
             print 'Skipped request %s %s' % (req.method, req.path_qs)
         else:
             print '%s %s' % (req.method, req.path_qs)
-            if options.print_response:
+            if req.response and req.response.status_int != resp.status_int:
                 print resp
-            elif req.response and req.response.status_int != resp.status_int:
                 print '  -> %s (originally %s)' % (resp.status, req.response.status_int)
+                if failures:
+                    failures.write(
+                        ('%s %s\n' % (req.method, req.path_qs)) +
+                        ('  -> %s %s (originally %s)\n' % (resp.status, resp.location or '', req.response.status_int)))
+            else:
+                if options.print_response:
+                    print resp
+                if success:
+                    success.write(apache_log_line(req, resp) + '\n')
+
 
 def parse_filters(filters):
     f = []
