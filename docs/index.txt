@@ -1,6 +1,15 @@
 WebTest Recorder
 ================
 
+.. toctree::
+
+   news
+   license
+
+.. contents::
+
+.. comment: split here
+
 This package lets you record all the requests and responses of an
 application, and then create a doctest from that.  (There's no real
 reason it couldn't be a unit test... just haven't written that yet.)
@@ -42,7 +51,7 @@ is padded with null bytes.
 Rerunning requests
 ------------------
 
-The module :module:`webtestrecorder.http` can take a list of
+The module :mod:`webtestrecorder.http` can take a list of
 requests/responses and send them to a server, effectively replaying
 requests.  This is also a command-line program usable like::
 
