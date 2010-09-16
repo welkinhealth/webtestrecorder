@@ -144,6 +144,7 @@ class Recorder(object):
         fp.close()
         return get_records(content)
 
+
 def get_records(file, RequestClass=TestRequest,
                 ResponseClass=TestResponse):
     if isinstance(file, basestring):
@@ -328,7 +329,9 @@ def pyrepr(value, indent=''):
         lines = v.split('\\n')
         return '\n'.join(lines[0] + [indent + l for l in lines[1:]])
     elif isinstance(value, dict):
-        if all(re.match(r'[a-zA-Z_][a-zA-Z_0-9]*', key) for key in value):
+        if all((isinstance(key, basestring)
+                and re.match(r'[a-zA-Z_][a-zA-Z_0-9]*', key))
+               for key in value):
             return 'dict(%s)' % (', '.join('%s=%s' % (key, pyrepr(v, indent))
                                            for key, v in sorted(value.items())))
         else:
