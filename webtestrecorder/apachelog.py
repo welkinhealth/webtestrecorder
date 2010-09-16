@@ -18,6 +18,7 @@ apache_regex = re.compile(
     ''',
     re.VERBOSE)
 
+
 def parse_apache_log(fp, host='localhost',
                      RequestClass=Request, ResponseClass=Response):
     for line in fp:
@@ -54,6 +55,7 @@ line_template = (
     '[%(date)s] "%(REQUEST_METHOD)s %(path)s %(HTTP_PROTOCOL)s" '
     '%(status)s %(size)s "%(HTTP_REFERER)s" "%(HTTP_USER_AGENT)s"')
 
+
 def apache_log_line(req, resp):
     d = {}
     for var in ['REMOTE_HOST', 'REMOTE_IDENT', 'REMOTE_USER',
@@ -68,6 +70,7 @@ def apache_log_line(req, resp):
     d['status'] = resp.status
     d['size'] = resp.content_length or '-'
     return line_template % d
+
 
 def parse_apache_date(date):
     return datetime.strptime(date.split()[0], '%d/%b/%Y:%H:%M:%S')

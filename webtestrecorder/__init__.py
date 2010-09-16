@@ -11,6 +11,7 @@ from webob import Request, Response
 from webtest import TestRequest, TestResponse
 from webob import descriptors
 
+
 class Recorder(object):
 
     def __init__(self, app, file, intercept='/.webtestrecorder',
@@ -185,9 +186,11 @@ def get_records(file, RequestClass=TestRequest,
         records.append(req)
     return records
 
+
 def write_doctest(records, fp, default_host='http://localhost'):
     for req in records:
         write_doctest_item(req, fp, default_host)
+
 
 def write_doctest_item(req, fp, default_host='http://localhost'):
     fixup_response(req)
@@ -204,6 +207,7 @@ def write_doctest_item(req, fp, default_host='http://localhost'):
         else:
             fp.write('    %s\n' % line)
 
+
 def write_function_unittest(records, fp, func_name='test_app', include_intro=True,
                             indent='', default_host='http://localhost'):
     if include_intro:
@@ -213,6 +217,7 @@ def write_function_unittest(records, fp, func_name='test_app', include_intro=Tru
     for req in records:
         write_function_unittest_item(req, fp, indent + '    ', app_name='app',
                                      default_host=default_host)
+
 
 def write_function_unittest_item(req, fp, indent, app_name='app', default_host='http://localhost'):
     fixup_response(req)
@@ -227,6 +232,7 @@ def write_function_unittest_item(req, fp, indent, app_name='app', default_host='
     fp.write('%sassert resp.body == %s\n' % (indent, pyrepr(resp.body, indent)))
     ## FIXME: I could check other things, but what things specifically?
 
+
 def fixup_response(req):
     """Make sure the req has a TestResponse response"""
     if not isinstance(req.response, TestResponse):
@@ -234,12 +240,14 @@ def fixup_response(req):
                             headerlist=req.response.headerlist)
         req.response = resp
 
+
 def internal_note(resp):
     """Returns the internal note, if the response is such a response.
     Otherwise returns None."""
     if resp.status.lower() == '200 internal note':
         return resp.body
     return None
+
 
 def match_host(hostname, url):
     if not hostname.startswith('http://'):
@@ -258,6 +266,7 @@ def match_host(hostname, url):
         if hostname == 'http://127.0.0.1':
             return match_host('http://localhost', url)
         return url
+
 
 def str_method_call(req, resp=None, default_host='http://localhost'):
     """Returns a method call that represents the given request, as
@@ -310,6 +319,7 @@ def str_method_call(req, resp=None, default_host='http://localhost'):
     ## FIXME: not all methods work this way (e.g., there's no app.mkcol()):
     return '.%s(%s)' % (req.method.lower(), params)
 
+
 def pyrepr(value, indent=''):
     if isinstance(value, basestring) and '\n' in value:
         v = repr(value)
@@ -333,6 +343,7 @@ parser = optparse.OptionParser(
 parser.add_option(
     '--func-unittest', action='store_true',
     help="Write a functional unittest instead of a doctest")
+
 
 def main():
     options, args = parser.parse_args()

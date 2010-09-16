@@ -2,6 +2,7 @@ import os
 import httplib
 from wsgiproxy.exactproxy import proxy_exact_request
 
+
 def replay_records(records, host=None, methods=None):
     for req in records:
         if host:
@@ -26,6 +27,7 @@ def replay_records(records, host=None, methods=None):
                 n += 1
         if resp is not None:
             yield req, resp
+
 
 def main():
     import sys
@@ -118,6 +120,7 @@ def parse_filters(filters):
             raise Exception('No function f() in code:\n%s' % filter_code)
         f.append(ns['f'])
     return f
+
 
 def run_filters(filters, req):
     for f in filters:
