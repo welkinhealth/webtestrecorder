@@ -1,4 +1,12 @@
+News
+====
+
+0.1.1
+-----
+
+* Packaging fix
+
 0.1
 ---
 
-* First release
+Initial release
