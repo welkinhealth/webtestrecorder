@@ -1,10 +1,7 @@
 WebTest Recorder
 ================
 
-.. toctree::
-
-   news
-   license
+.. toc::
 
 .. contents::
 
@@ -43,7 +40,7 @@ Apache Logs
 -----------
 
 You can read requests and responses from Apache logs via
-:func:`webtestrecorder.apachelog.parse_apache_log()`.  A constraint of
+`webtestrecorder.apachelog.parse_apache_log()`.  A constraint of
 this is that request bodies won't be present, and responses just have
 a status code and Content-Length, the Content-Type is unknown and the body
 is padded with null bytes.
@@ -51,7 +48,7 @@ is padded with null bytes.
 Rerunning requests
 ------------------
 
-The module :mod:`webtestrecorder.http` can take a list of
+The module `webtestrecorder.http` can take a list of
 requests/responses and send them to a server, effectively replaying
 requests.  This is also a command-line program usable like::
 
@@ -59,3 +56,16 @@ requests.  This is also a command-line program usable like::
 
 You can filter or rewrite these requests with a custom filter
 function.  See ``python -m webtestrecorder.http -h`` for more.
+
+News
+----
+
+0.1.1
+~~~~~
+
+* Packaging fixes
+
+0.1
+~~~
+
+* Initial release
